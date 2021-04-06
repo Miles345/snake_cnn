@@ -5,7 +5,7 @@ import numpy as np
 import cv2
 from torch.optim import Adam
 # Local imports
-import snakegame
+import environment
 import supportFunctions as sF
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -29,15 +29,15 @@ class ConvNet(nn.Module):
 
 class Agent:
     def __init__(self):
-        self.game = snakegame.Game()
-        self.model = ConvNet()
+        self.game = environment.Game()  # later threadable
+        self.model = ConvNet()          # To do: move model parameters to other class
         self.optimizer = Adam(self.model.parameters(), lr=0.001)
         self.loss = nn.L1Loss()
         if torch.cuda.is_available():
             self.model = self.model.cuda()
             self.loss = self.loss.cuda()
 
-    def stateToVec(self):
+    def getStateAsVec(self):
 
         # get game window
         rawImg = pygame.surfarray.array3d(self.game.game_window)
@@ -67,7 +67,7 @@ class Agent:
         return torchVec
     
     def run_game(self):
-        #while True:
+        while True:
         ### interesting Variables ####
         # game.food_pos              #
         # game.snake_pos             #
@@ -76,15 +76,17 @@ class Agent:
         ##############################
 
         # Input of commands
-        keypressed = input()
+            keypressed = str(input())
+            
 
         # Call to step ingame, all variables acessible through self.game
-        self.game.step(keypressed)
+            self.game.step(keypressed)
+            print(self.game.snake_pos)
 
         ###### Training ######
-        stateVec = self.stateToVec()
-        pred = self.model(stateVec)
-        print(pred)
+        #stateVec = self.getStateAsVec()
+        #pred = self.model(stateVec)
+        #print(pred)
 
 
         # updated_q_values = rewards_sample + 0.99 * tf.reduce_max(pred, axis=1)
@@ -97,9 +99,8 @@ class Agent:
         # if self.game.reward == -1:
         #     sys.exit()
 
-        
-seed = 12341
-sF.seed_everything(seed) 
+
+sF.seed_everything(12341) 
 agent = Agent()
 
 agent.run_game()

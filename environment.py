@@ -1,5 +1,7 @@
 import pygame, sys, time, random
 
+# def game_over isn't used anymore. now it just sets the reward to -1
+
 class Game:
     def __init__(self):
         # Difficulty settings
@@ -87,8 +89,8 @@ class Game:
     def step(self, keypressed):
         # Main logic
         self.reward = 0
-        self.keypressed = keypressed
-        for event in pygame.event.get():                                                                 # Here control of snake
+        #for event in pygame.event.get():                                                                 # Here control of snake
+
         #     if event.type == pygame.QUIT:
         #         pygame.quit()
         #         sys.exit()
@@ -107,16 +109,17 @@ class Game:
             #     if event.key == pygame.K_ESCAPE:
             #         pygame.event.post(pygame.event.Event(pygame.QUIT))
         
-
-            if self.keypressed == 'w':
-                self.change_to = 'UP'
-            if self.keypressed =='s':
-                self.change_to = 'DOWN'
-            if self.keypressed == 'a':
-                self.change_to = 'LEFT'
-            if self.keypressed == 'd':
-                self.change_to = 'RIGHT'
-
+############ Here control from snake.py ###############
+        self.keypressed = keypressed
+        if self.keypressed == 'w':                      
+            self.change_to = 'UP'
+        if self.keypressed == 's':
+            self.change_to = 'DOWN'
+        if self.keypressed == 'a':
+            self.change_to = 'LEFT'
+        if self.keypressed == 'd':
+            self.change_to = 'RIGHT'
+############         /changes           ###############
 
 
         # Making sure the snake cannot move in the opposite direction instantaneously
