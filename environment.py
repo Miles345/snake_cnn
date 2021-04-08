@@ -111,13 +111,13 @@ class Game:
         
 ############ Here control from snake.py ###############
         self.keypressed = keypressed
-        if self.keypressed == 'w':                      
+        if self.keypressed == 0:                      
             self.change_to = 'UP'
-        if self.keypressed == 's':
+        if self.keypressed == 1:
             self.change_to = 'DOWN'
-        if self.keypressed == 'a':
+        if self.keypressed == 2:
             self.change_to = 'LEFT'
-        if self.keypressed == 'd':
+        if self.keypressed == 3:
             self.change_to = 'RIGHT'
 ############         /changes           ###############
 
@@ -186,5 +186,7 @@ class Game:
                                                                            # Here get current positions
         # Refresh rate
         self.fps_controller.tick(self.difficulty)
-        if self.reward == -1:
-            pygame.quit()
+        #if self.reward == -1:
+        #    pygame.quit()
+    def quit(self):
+        pygame.quit()

@@ -18,7 +18,7 @@ class ConvNet(nn.Module):
             #nn.BatchNorm2d(32),
             nn.ReLU())
             #nn.MaxPool2d(kernel_size=2, stride=2))
-        self.fc = nn.Linear(in_features=86528, out_features=4)
+        self.fc = nn.Linear(in_features=93312, out_features=4)
 
     def forward(self, x):
         x = self.conv(x)
@@ -29,10 +29,12 @@ class ConvNet(nn.Module):
 
 class Agent:
     def __init__(self):
-        self.game = environment.Game()  # later threadable
         self.model = ConvNet()          # To do: move model parameters to other class
         self.optimizer = Adam(self.model.parameters(), lr=0.001)
         self.loss = nn.L1Loss()
+        self.LEARNING_RATE = 0.1
+        self.DISCOUNT = 0.95
+        self.EPOCHS = 20
         if torch.cuda.is_available():
             self.model = self.model.cuda()
             self.loss = self.loss.cuda()
@@ -48,7 +50,7 @@ class Agent:
         # game window to input Vectors
         pxrow = [-1]
         pxscaled = list()
-        pxscaled.append([-1] * int(self.game.frame_size_x/10))
+        pxscaled.append([-1] * (int(self.game.frame_size_x/10)+2))
         for i in scaledImg:
             for j in i:
                 if j[1] == 255:
@@ -60,44 +62,74 @@ class Agent:
             pxrow.append(-1)
             pxscaled.append(pxrow)
             pxrow = [-1]
-        pxscaled.append([-1] * int(self.game.frame_size_x/10))
-
+        pxscaled.append([-1] * (int(self.game.frame_size_x/10)+2))
         torchVec = torch.tensor(pxscaled, dtype= torch.float).unsqueeze(0).unsqueeze(0)
         torchVec = torchVec.to(device)
         return torchVec
     
     def run_game(self):
-        while True:
-        ### interesting Variables ####
-        # game.food_pos              #
-        # game.snake_pos             #
-        # game.snake_body            #
-        # game.reward                #
-        ##############################
+        for self.epoch in range(self.EPOCHS):
+            self.game = environment.Game()  # later threadable
+            while self.game.reward != -1:
+                ### interesting Variables ####
+                # game.food_pos              #
+                # game.snake_pos             #
+                # game.snake_body            #
+                # game.reward                #
+                ##############################
 
-        # Input of commands
-            keypressed = str(input())
+                # set manual True if you want to manual navigate the snake
+                self.manual = False
+                if self.manual == True:  
+                    # Input 0, 1, 2, 3
+                    self.keypressed = input()
+                    # Call to step ingame, all variables acessible through self.game
+                    if self.keypressed != '':
+                        self.keypressed = int(self.keypressed)
+                    self.game.step(self.keypressed)
+                    print(self.game.snake_pos)
+
+                else:
+                    ####### Training #######
+                    self.stateVec = self.getStateAsVec()
+                    # predict next q
+                    self.q_values = self.model(self.stateVec)
+                    self.np_q_values = self.q_values
+                    self.np_q_values = self.np_q_values.detach().cpu().numpy()
+                    self.action = np.argmax(self.np_q_values)
+                    print(self.action)
+                    self.reward = self.game.reward
+                    # Exec next step
+                    self.game.step(self.action)
+                    if self.reward != -1:
+                        self.future_stateVec = self.getStateAsVec()
+                    else:
+                        self.future_stateVec = self.stateVec
+                    self.future_step = self.model(self.future_stateVec)
+                    self.max_future_q = np.argmax(self.future_step.detach().cpu().numpy())
+                    self.current_q = self.np_q_values[0][self.action]
+                    print(self.current_q)
+                    self.new_q = (1- self.LEARNING_RATE) * self.current_q + self.LEARNING_RATE *(self.reward + self.DISCOUNT * self.max_future_q)
+                    self.out = self.loss(self.new_q, self.current_q)
+                    self.out.backward()
+                    self.optimizer.step()
+                    self.optimizer.zero_grad()
+                    ###### /Training ######
+
+
+
+            #print(pred)
+
+
+            # updated_q_values = rewards_sample + 0.99 * tf.reduce_max(pred, axis=1)
+            # updated_q_values = updated_q_values * (1 - done_sample) - done_sample*abs(self.PENALTY)
+            # loss = self.loss(updated_q_values, )
+            # cv2.imshow("sdf", scaledImg)
+            # cv2.waitKey(0) # wait for ay key to exit window
+            # cv2.destroyAllWindows() # close all windows
             
-
-        # Call to step ingame, all variables acessible through self.game
-            self.game.step(keypressed)
-            print(self.game.snake_pos)
-
-        ###### Training ######
-        #stateVec = self.getStateAsVec()
-        #pred = self.model(stateVec)
-        #print(pred)
-
-
-        # updated_q_values = rewards_sample + 0.99 * tf.reduce_max(pred, axis=1)
-        # updated_q_values = updated_q_values * (1 - done_sample) - done_sample*abs(self.PENALTY)
-        # loss = self.loss(updated_q_values, )
-        # cv2.imshow("sdf", scaledImg)
-        # cv2.waitKey(0) # wait for ay key to exit window
-        # cv2.destroyAllWindows() # close all windows
-        
-        # if self.game.reward == -1:
-        #     sys.exit()
+                if self.game.reward == -1:
+                    self.game.quit()
 
 
 sF.seed_everything(12341) 
