@@ -47,7 +47,8 @@ class Agent:
         # game window downscaled to 1px per field
         scaledImg = cv2.resize(rawImg, (0,0), fx=0.1, fy=0.1)            
 
-        # game window to input Vectors
+        # game window to input Vectors - for now just lists - should be optimized in future iters
+        # replace RGB with just 1,0,-1 for the 3 different colors ingame
         pxrow = [-1]
         pxscaled = list()
         pxscaled.append([-1] * (int(self.game.frame_size_x/10)+2))
@@ -69,7 +70,7 @@ class Agent:
     
     def run_game(self):
         for self.epoch in range(self.EPOCHS):
-            self.game = environment.Game()  # later threadable
+            self.game = environment.Game()  # later threadable - To Do: Stop rendering of game if in for loop
             while self.game.reward != -1:
                 ### interesting Variables ####
                 # game.food_pos              #
@@ -92,24 +93,28 @@ class Agent:
                 else:
                     ####### Training #######
                     self.stateVec = self.getStateAsVec()
-                    # predict next q
+                    # predict q and select action
                     self.q_values = self.model(self.stateVec)
                     self.np_q_values = self.q_values
-                    self.np_q_values = self.np_q_values.detach().cpu().numpy()
+                    self.np_q_values = self.np_q_values.detach().cpu().numpy()  # Try out more stuff here. This here rly necessary?
                     self.action = np.argmax(self.np_q_values)
                     print(self.action)
                     self.reward = self.game.reward
                     # Exec next step
                     self.game.step(self.action)
+                    # Fixing out of bounds if gameborder is reached # not working 
                     if self.reward != -1:
                         self.future_stateVec = self.getStateAsVec()
                     else:
                         self.future_stateVec = self.stateVec
+                    # Get maxQ' 
                     self.future_step = self.model(self.future_stateVec)
                     self.max_future_q = np.argmax(self.future_step.detach().cpu().numpy())
                     self.current_q = self.np_q_values[0][self.action]
-                    print(self.current_q)
+
                     self.new_q = (1- self.LEARNING_RATE) * self.current_q + self.LEARNING_RATE *(self.reward + self.DISCOUNT * self.max_future_q)
+                    
+                    # how to calc loss without changing whole tensor? Only part with maxq has to be changed
                     self.out = self.loss(self.new_q, self.current_q)
                     self.out.backward()
                     self.optimizer.step()
