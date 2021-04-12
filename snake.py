@@ -4,11 +4,25 @@ import torch.nn as nn
 import numpy as np
 import cv2
 from torch.optim import Adam
+from collections import deque
+import random
 # Local imports
 import environment
 import supportFunctions as sF
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')           # Some global configs
+device = 'cpu'
+torch.autograd.set_detect_anomaly(True)
+
+
+REPLAY_MEMORY_SIZE = 50000          # Constants
+DISCOUNT = 0.99
+EPOCHS = 1000
+MIN_REPLAY_MEMORY_SIZE = 10         # fit after testing < 10000
+MINIBATCH_SIZE = 5                  # maybe 32   
+UPDATE_TARGET_EVERY = 5
+EPSILON_DECAY = 0.99975
+MIN_EPSILON = 0.001
 
 class ConvNet(nn.Module):
     def __init__(self):
@@ -19,6 +33,8 @@ class ConvNet(nn.Module):
             nn.ReLU())
             #nn.MaxPool2d(kernel_size=2, stride=2))
         self.fc = nn.Linear(in_features=93312, out_features=4)
+        self.optimizer = Adam(self.parameters(), lr=0.001)
+        self.loss = nn.L1Loss()
 
     def forward(self, x):
         x = self.conv(x)
@@ -30,14 +46,73 @@ class ConvNet(nn.Module):
 class Agent:
     def __init__(self):
         self.model = ConvNet()          # To do: move model parameters to other class
-        self.optimizer = Adam(self.model.parameters(), lr=0.001)
-        self.loss = nn.L1Loss()
-        self.LEARNING_RATE = 0.1
-        self.DISCOUNT = 0.95
-        self.EPOCHS = 20
-        if torch.cuda.is_available():
+        self.target_model = ConvNet()
+        if device == 'cuda':
             self.model = self.model.cuda()
-            self.loss = self.loss.cuda()
+            self.model.loss = self.model.loss.cuda()
+            self.target_model = self.target_model.cuda()
+            self.target_model.loss = self.target_model.loss.cuda()
+        # init both with same weights
+        self.target_model.fc.weight = self.model.fc.weight      # target model is what we predict against every step
+                                                                # target model weights will be updated every few steps to keep sanity because of large epsilon
+        self.replay_memory = deque(maxlen=REPLAY_MEMORY_SIZE)
+
+        self.target_update_counter = 0
+
+    def update_replay_memory(self, transition):
+        self.replay_memory.append(transition)
+
+    def get_qs(self, state, step):
+        return self.model(state)
+
+    def train(self, terminal_state, step):
+        if len(self.replay_memory) < MIN_REPLAY_MEMORY_SIZE:
+            return
+
+        self.current_qs_list = list()                                           # get predictions for current_state and future_state with same model
+        self.future_qs_list = list()
+
+        # get random sample of replay memory 
+        self.minibatch = random.sample(self.replay_memory, MINIBATCH_SIZE)
+
+        # predict current qs of states in minibatch
+        self.current_states = [transition[0] for transition in self.minibatch]
+        for state in self.current_states:
+            self.current_qs_list.append(self.model(state))
+
+        # predict qs with target model
+        self.new_current_states = [transition[3] for transition in self.minibatch]
+        for state in self.new_current_states:
+            self.future_qs_list.append(self.target_model(state))
+        
+        for index, (self.current_states, self.action, self.reward, self.new_current_state, self.done) in enumerate(self.minibatch):
+            if not self.done:
+                self.max_future_q = torch.max(self.future_qs_list[index])
+                self.new_q = self.reward + DISCOUNT * self.max_future_q
+            else:
+                self.new_q = torch.tensor(self.reward, device=device)
+
+            self.current_qs = self.current_qs_list[index]
+            if terminal_state:
+                with torch.no_grad():
+                    self.new_q_tensor = self.current_qs
+                    self.new_q_tensor[0][torch.tensor(self.action)] = self.new_q
+
+                self.l = self.model.loss(self.current_qs, self.new_q_tensor)
+                self.l.backward()
+
+                self.model.optimizer.step()
+                self.model.optimizer.zero_grad()
+                
+            else:
+                self.target_update_counter += 1
+                self.model.eval()
+            if self.target_update_counter > UPDATE_TARGET_EVERY:
+                self.target_model.set_weights(self.model.get_Weights())
+                self.target_update_counter = 0
+                
+
+        
 
     def getStateAsVec(self):
 
@@ -69,8 +144,18 @@ class Agent:
         return torchVec
     
     def run_game(self):
-        for self.epoch in range(self.EPOCHS):
+        self.epoch_reward = 0
+        self.episode_reward = 0
+        self.max_epoch_reward = 0
+        epsilon = 1
+        for self.epoch in range(EPOCHS):
             self.game = environment.Game()  # later threadable - To Do: Stop rendering of game if in for loop
+            self.done = False
+            self.epoch_reward += self.episode_reward
+            if self.epoch_reward > self.max_epoch_reward:
+                self.max_epoch_reward = self.epoch_reward
+                self.model.save(f'model_{self.epoch}.model')
+            self.episode_reward = 0
             while self.game.reward != -1:
                 ### interesting Variables ####
                 # game.food_pos              #
@@ -92,47 +177,35 @@ class Agent:
 
                 else:
                     ####### Training #######
-                    self.stateVec = self.getStateAsVec()
-                    # predict q and select action
-                    self.q_values = self.model(self.stateVec)
-                    self.np_q_values = self.q_values
-                    self.np_q_values = self.np_q_values.detach().cpu().numpy()  # Try out more stuff here. This here rly necessary?
-                    self.action = np.argmax(self.np_q_values)
-                    print(self.action)
-                    self.reward = self.game.reward
-                    # Exec next step
-                    self.game.step(self.action)
-                    # Fixing out of bounds if gameborder is reached # not working 
-                    if self.reward != -1:
-                        self.future_stateVec = self.getStateAsVec()
+                    self.current_state = self.getStateAsVec()
+                    if np.random.random_sample() > epsilon:
+                        
+                        # predict q and select action
+                        self.q_values = self.model(self.current_state)
+                        self.action = torch.max(self.q_values)
                     else:
-                        self.future_stateVec = self.stateVec
-                    # Get maxQ' 
-                    self.future_step = self.model(self.future_stateVec)
-                    self.max_future_q = np.argmax(self.future_step.detach().cpu().numpy())
-                    self.current_q = self.np_q_values[0][self.action]
+                        self.action = np.random.randint(0, 3)
 
-                    self.new_q = (1- self.LEARNING_RATE) * self.current_q + self.LEARNING_RATE *(self.reward + self.DISCOUNT * self.max_future_q)
-                    
-                    # how to calc loss without changing whole tensor? Only part with maxq has to be changed
-                    self.out = self.loss(self.new_q, self.current_q)
-                    self.out.backward()
-                    self.optimizer.step()
-                    self.optimizer.zero_grad()
-                    ###### /Training ######
+                    # Exec next step
+                    if type(self.action) == torch.tensor:
+                        self.game.step(self.action.item())
+                    else:
+                        self.game.step(self.action)
 
+                    self.reward = self.game.reward
 
+                    self.new_state = self.getStateAsVec()
+                    if self.reward == -1:
+                        self.done = True
+                    self.episode_reward += self.reward
+                    self.update_replay_memory((self.current_state, self.action, self.reward, self.new_state, self.done))
+                    self.train(self.done, 0)
+                    self.current_state = self.new_state
 
-            #print(pred)
-
-
-            # updated_q_values = rewards_sample + 0.99 * tf.reduce_max(pred, axis=1)
-            # updated_q_values = updated_q_values * (1 - done_sample) - done_sample*abs(self.PENALTY)
-            # loss = self.loss(updated_q_values, )
-            # cv2.imshow("sdf", scaledImg)
-            # cv2.waitKey(0) # wait for ay key to exit window
-            # cv2.destroyAllWindows() # close all windows
-            
+                    if epsilon > MIN_EPSILON:
+                        epsilon *= EPSILON_DECAY
+                        epsilon = max(MIN_EPSILON, epsilon)
+                    ###### /Training ######           
                 if self.game.reward == -1:
                     self.game.quit()
 
