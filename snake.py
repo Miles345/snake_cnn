@@ -6,9 +6,11 @@ import cv2
 from torch.optim import Adam
 from collections import deque
 import random
+import copy
 # Local imports
 import environment
 import supportFunctions as sF
+
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')           # Some global configs
 device = 'cpu'
@@ -23,6 +25,7 @@ MINIBATCH_SIZE = 5                  # maybe 32
 UPDATE_TARGET_EVERY = 5
 EPSILON_DECAY = 0.99975
 MIN_EPSILON = 0.001
+RENDER = True
 
 class ConvNet(nn.Module):
     def __init__(self):
@@ -87,20 +90,17 @@ class Agent:
         
         for index, (self.current_states, self.action, self.reward, self.new_current_state, self.done) in enumerate(self.minibatch):
             if not self.done:
-                self.max_future_q = torch.max(self.future_qs_list[index])
+                self.max_future_q = torch.max(self.target_model(self.new_current_state))
                 self.new_q = self.reward + DISCOUNT * self.max_future_q
             else:
                 self.new_q = torch.tensor(self.reward, device=device)
 
-            self.current_qs = self.current_qs_list[index]
+            self.current_qs = torch.max(self.model(self.current_states))
+
+
+            self.l = self.model.loss(self.current_qs, self.new_q)
+            self.l.backward()
             if terminal_state:
-                with torch.no_grad():
-                    self.new_q_tensor = self.current_qs
-                    self.new_q_tensor[0][torch.tensor(self.action)] = self.new_q
-
-                self.l = self.model.loss(self.current_qs, self.new_q_tensor)
-                self.l.backward()
-
                 self.model.optimizer.step()
                 self.model.optimizer.zero_grad()
                 
@@ -108,7 +108,7 @@ class Agent:
                 self.target_update_counter += 1
                 self.model.eval()
             if self.target_update_counter > UPDATE_TARGET_EVERY:
-                self.target_model.set_weights(self.model.get_Weights())
+                self.target_model = copy.deepcopy(self.model)
                 self.target_update_counter = 0
                 
 
@@ -149,7 +149,7 @@ class Agent:
         self.max_epoch_reward = 0
         epsilon = 1
         for self.epoch in range(EPOCHS):
-            self.game = environment.Game()  # later threadable - To Do: Stop rendering of game if in for loop
+            self.game = environment.Game(RENDER)  # later threadable - To Do: Stop rendering of game if in for loop
             self.done = False
             self.epoch_reward += self.episode_reward
             if self.epoch_reward > self.max_epoch_reward:
@@ -165,8 +165,8 @@ class Agent:
                 ##############################
 
                 # set manual True if you want to manual navigate the snake
-                self.manual = False
-                if self.manual == True:  
+                self.manual = True
+                if self.manual == False:  
                     # Input 0, 1, 2, 3
                     self.keypressed = input()
                     # Call to step ingame, all variables acessible through self.game
@@ -210,7 +210,7 @@ class Agent:
                     self.game.quit()
 
 
-sF.seed_everything(12341) 
+sF.seed_everything(1) 
 agent = Agent()
 
 agent.run_game()

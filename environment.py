@@ -3,14 +3,15 @@ import pygame, sys, time, random
 # def game_over isn't used anymore. now it just sets the reward to -1
 
 class Game:
-    def __init__(self):
+    def __init__(self, render):
+        self.render = render
         # Difficulty settings
         # Easy      ->  10
         # Medium    ->  25
         # Hard      ->  40
         # Harder    ->  60
         # Impossible->  120
-        self.difficulty = 25
+        self.difficulty = 10000
 
         # Window size
         self.frame_size_x = 500
@@ -28,7 +29,7 @@ class Game:
 
 
         # Initialise game window
-        pygame.display.set_caption('Snake Eater')
+        #pygame.display.set_caption('Snake Eater')
         self.game_window = pygame.display.set_mode((self.frame_size_x, self.frame_size_y))
 
 
@@ -57,34 +58,6 @@ class Game:
 
         self.score = 0
         self.reward = 0
-
-
-    # Game Over
-    def game_over(self):
-        my_font = pygame.font.SysFont('times new roman', 90)                                            # Here -1 backprop
-        game_over_surface = my_font.render('YOU DIED', True, self.red)
-        game_over_rect = game_over_surface.get_rect()
-        game_over_rect.midtop = (self.frame_size_x/2, self.frame_size_y/4)
-        self.game_window.fill(self.black)
-        self.game_window.blit(game_over_surface, game_over_rect)
-        #self.show_score(0, self.red, 'times', 20)
-        pygame.display.flip()
-        time.sleep(3)
-        pygame.quit()
-        sys.exit()
-
-
-    # Score
-    def show_score(self, choice, color, font, size):
-        score_font = pygame.font.SysFont(font, size)
-        score_surface = score_font.render('Score : ' + str(self.score), True, color)
-        score_rect = score_surface.get_rect()
-        if choice == 1:
-            score_rect.midtop = (self.frame_size_x/10, 15)
-        else:
-            score_rect.midtop = (self.frame_size_x/2, self.frame_size_y/1.25)
-        self.game_window.blit(score_surface, score_rect)
-        # pygame.display.flip()
 
     def step(self, keypressed):
         # Main logic
@@ -169,23 +142,24 @@ class Game:
         # Game Over conditions
         # Getting out of bounds
         if self.snake_pos[0] < 0 or self.snake_pos[0] > self.frame_size_x-10:
-            #self.game_over()
+
             self.reward = -1
         if self.snake_pos[1] < 0 or self.snake_pos[1] > self.frame_size_y-10:
-            #self.game_over()
+
             self.reward = -1
         # Touching the snake body
         for block in self.snake_body[1:]:
             if self.snake_pos[0] == block[0] and self.snake_pos[1] == block[1]:
-                #self.game_over()
+
                 self.reward = -1
 
-        #self.show_score(1, self.white, 'consolas', 20)
+
         # Refresh game screen
-        pygame.display.update()
+        if self.render == True:
+            pygame.display.update()
                                                                            # Here get current positions
         # Refresh rate
-        self.fps_controller.tick(self.difficulty)
+        self.fps_controller.tick(1000)
         #if self.reward == -1:
         #    pygame.quit()
     def quit(self):
