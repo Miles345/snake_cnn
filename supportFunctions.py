@@ -152,3 +152,5 @@ def run_game(self):
         
             if self.game.reward == -1:
                 self.game.quit()
+
+

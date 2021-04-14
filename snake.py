@@ -20,9 +20,9 @@ torch.autograd.set_detect_anomaly(True)
 REPLAY_MEMORY_SIZE = 50000          # Constants
 DISCOUNT = 0.99
 EPOCHS = 1000
-MIN_REPLAY_MEMORY_SIZE = 10         # fit after testing < 10000
-MINIBATCH_SIZE = 5                  # maybe 32   
-UPDATE_TARGET_EVERY = 5
+MIN_REPLAY_MEMORY_SIZE = 1000         # fit after testing < 10000
+MINIBATCH_SIZE = 64                  # maybe 32   
+UPDATE_TARGET_EVERY = 32
 EPSILON_DECAY = 0.99975
 MIN_EPSILON = 0.001
 RENDER = True
@@ -72,21 +72,21 @@ class Agent:
         if len(self.replay_memory) < MIN_REPLAY_MEMORY_SIZE:
             return
 
-        self.current_qs_list = list()                                           # get predictions for current_state and future_state with same model
-        self.future_qs_list = list()
+        #self.current_qs_list = list()                                           # get predictions for current_state and future_state with same model
+        #self.future_qs_list = list()
 
         # get random sample of replay memory 
         self.minibatch = random.sample(self.replay_memory, MINIBATCH_SIZE)
 
         # predict current qs of states in minibatch
-        self.current_states = [transition[0] for transition in self.minibatch]
-        for state in self.current_states:
-            self.current_qs_list.append(self.model(state))
+        # self.current_states = [transition[0] for transition in self.minibatch]
+        # for state in self.current_states:
+        #     self.current_qs_list.append(self.model(state))
 
         # predict qs with target model
-        self.new_current_states = [transition[3] for transition in self.minibatch]
-        for state in self.new_current_states:
-            self.future_qs_list.append(self.target_model(state))
+        # self.new_current_states = [transition[3] for transition in self.minibatch]
+        # for state in self.new_current_states:
+        #     self.future_qs_list.append(self.target_model(state))
         
         for index, (self.current_states, self.action, self.reward, self.new_current_state, self.done) in enumerate(self.minibatch):
             if not self.done:
@@ -184,7 +184,7 @@ class Agent:
                         self.q_values = self.model(self.current_state)
                         self.action = torch.max(self.q_values)
                     else:
-                        self.action = np.random.randint(0, 3)
+                        self.action = np.random.randint(0, 4)
 
                     # Exec next step
                     if type(self.action) == torch.tensor:
@@ -205,6 +205,7 @@ class Agent:
                     if epsilon > MIN_EPSILON:
                         epsilon *= EPSILON_DECAY
                         epsilon = max(MIN_EPSILON, epsilon)
+                        print(epsilon)
                     ###### /Training ######           
                 if self.game.reward == -1:
                     self.game.quit()

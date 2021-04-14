@@ -61,6 +61,7 @@ class Game:
 
     def step(self, keypressed):
         # Main logic
+        self.fps_controller.tick(1000)
         self.reward = 0
         #for event in pygame.event.get():                                                                 # Here control of snake
 
@@ -150,7 +151,6 @@ class Game:
         # Touching the snake body
         for block in self.snake_body[1:]:
             if self.snake_pos[0] == block[0] and self.snake_pos[1] == block[1]:
-
                 self.reward = -1
 
 
@@ -159,7 +159,7 @@ class Game:
             pygame.display.update()
                                                                            # Here get current positions
         # Refresh rate
-        self.fps_controller.tick(1000)
+        
         #if self.reward == -1:
         #    pygame.quit()
     def quit(self):
