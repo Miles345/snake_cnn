@@ -48,8 +48,11 @@ class Game:
         # Game variables
         self.snake_pos = [100, 50]
         self.snake_body = [[100, 50], [100-10, 50], [100-(2*10), 50]]
-
-        self.food_pos = [random.randrange(1, (self.frame_size_x//10)) * 10, random.randrange(1, (self.frame_size_y//10)) * 10]
+        ### moar food ###
+        self.foodcount = 30
+        self.foodposlist = list()
+        for _ in range(self.foodcount):
+            self.foodposlist.append([random.randrange(1, (self.frame_size_x//10)) * 10, random.randrange(1, (self.frame_size_y//10)) * 10])
         self.food_spawn = True
 
         self.keypressed = 'd'
@@ -118,15 +121,18 @@ class Game:
 
         # Snake body growing mechanism
         self.snake_body.insert(0, list(self.snake_pos))
-        if self.snake_pos[0] == self.food_pos[0] and self.snake_pos[1] == self.food_pos[1]:
-            self.food_spawn = False
-            self.reward = 1
+        for foodpos in self.foodposlist:
+            if self.snake_pos[0] == foodpos[0] and self.snake_pos[1] == foodpos[1]:
+                self.food_spawn = False
+                self.reward = 1
+                self.foodposlist.remove(foodpos)
+                break
         else:
             self.snake_body.pop()
 
         # Spawning food on the screen
         if not self.food_spawn:
-            self.food_pos = [random.randrange(1, (self.frame_size_x//10)) * 10, random.randrange(1, (self.frame_size_y//10)) * 10]
+            self.foodposlist.append([random.randrange(1, (self.frame_size_x//10)) * 10, random.randrange(1, (self.frame_size_y//10)) * 10])
         self.food_spawn = True
 
         # GFX
@@ -138,13 +144,14 @@ class Game:
             pygame.draw.rect(self.game_window, self.green, pygame.Rect(pos[0], pos[1], 10, 10))
 
         # Snake food
-        pygame.draw.rect(self.game_window, self.blue, pygame.Rect(self.food_pos[0], self.food_pos[1], 10, 10))
+        for foodpos in self.foodposlist:
+            pygame.draw.rect(self.game_window, self.blue, pygame.Rect(foodpos[0], foodpos[1], 10, 10))
 
         # Game Over conditions
         # Getting out of bounds
         if self.snake_pos[0] < 0 or self.snake_pos[0] > self.frame_size_x-10:
-
             self.reward = -1
+
         if self.snake_pos[1] < 0 or self.snake_pos[1] > self.frame_size_y-10:
 
             self.reward = -1
@@ -157,10 +164,5 @@ class Game:
         # Refresh game screen
         if self.render == True:
             pygame.display.update()
-                                                                           # Here get current positions
-        # Refresh rate
-        
-        #if self.reward == -1:
-        #    pygame.quit()
     def quit(self):
         pygame.quit()
