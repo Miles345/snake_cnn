@@ -18,15 +18,21 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')           
 torch.autograd.set_detect_anomaly(True)
 
 
-REPLAY_MEMORY_SIZE = 50000          # Constants
+REPLAY_MEMORY_SIZE = 500000          # Constants
 DISCOUNT = 0.99
-EPOCHS = 1000
-MIN_REPLAY_MEMORY_SIZE = 5000       # fit after testing < 10000
+EPOCHS = 10000
+MIN_REPLAY_MEMORY_SIZE = 100000       # fit after testing < 10000
 MINIBATCH_SIZE = 64                  # maybe 32   
 UPDATE_TARGET_EVERY = 10
 EPSILON_DECAY = 0.99975
 MIN_EPSILON = 0.001
+
 RENDER = True
+IMPORT_REPLAY_MEMORY = False
+IMPORTED_EPSILON = 0.5
+
+MANUAL = False
+
 
 class ConvNet(nn.Module):
     def __init__(self):
@@ -53,6 +59,7 @@ class Agent:
         self.model = ConvNet()          # To do: move model parameters to other class
         self.target_model = ConvNet()
         self.model_fit_count = 0
+        self.first_train_step = True
         # Move models to GPU
         if device != 'cpu':
             self.model = self.model.cuda()
@@ -63,6 +70,10 @@ class Agent:
         self.target_model.load_state_dict(self.model.state_dict())   # target model weights will be updated every few steps to keep sanity because of large epsilon
         
         self.replay_memory = deque(maxlen=REPLAY_MEMORY_SIZE)
+
+        if IMPORT_REPLAY_MEMORY == True:
+            with open(f"replaymemory.pickle", 'rb') as handle:
+                self.replay_memory = pickle.load(handle)
 
         self.target_update_counter = 0
 
@@ -75,6 +86,11 @@ class Agent:
     def train(self, terminal_state, step):                  # realy call every step? 
         if len(self.replay_memory) < MIN_REPLAY_MEMORY_SIZE:
             return
+        if self.first_train_step == True:
+                # Save replay memory at first training step
+                with open(f"replaymemory.pickle", 'wb') as handle:
+                    pickle.dump(self.replay_memory, handle)
+                self.first_train_step = False
 
         # get random sample of replay memory 
         self.minibatch = random.sample(self.replay_memory, MINIBATCH_SIZE)
@@ -114,53 +130,25 @@ class Agent:
             if self.target_update_counter > UPDATE_TARGET_EVERY:
                 self.target_model.load_state_dict(self.model.state_dict())
                 self.target_update_counter = 0
-
-    def getStateAsVec(self):
-        # get game window
-        rawImg = pygame.surfarray.array3d(self.game.game_window)
-
-        # game window downscaled to 1px per field
-        scaledImg = cv2.resize(rawImg, (0,0), fx=0.1, fy=0.1)            
-
-        # game window to input Vectors - for now just lists - should be optimized in future iters
-        # replace RGB with just 1,0,-1 for the 3 different colors ingame
-        pxrow = [-1]
-        pxscaled = list()
-        pxscaled.append([-1] * (int(self.game.frame_size_x/10)+2))
-        for i in scaledImg:
-            for j in i:
-                if j[1] == 255:
-                    pxrow.append(-1)
-                elif j[2] == 255:
-                    pxrow.append(1)
-                else:
-                    pxrow.append(0)
-            pxrow.append(-1)
-            pxscaled.append(pxrow)
-            pxrow = [-1]
-        pxscaled.append([-1] * (int(self.game.frame_size_x/10)+2))
-        torchVec = torch.tensor(pxscaled, dtype= torch.float).unsqueeze(0).unsqueeze(0).to(device)
-        #torchVec = torchVec.to(device)
-        return torchVec
     
     def run_game(self):
-        self.epoch_reward = 0
-        self.episode_reward = 1
-        self.max_epoch_reward = 0
+
+        list_earned_rewards = list ()
+
         epsilon = 1
+        if IMPORT_REPLAY_MEMORY == True:
+            epsilon = IMPORTED_EPSILON
         epscount = 0
         stepcountlist = list()
         for self.epoch in range(EPOCHS):
-            self.game = environment.Game(RENDER)  # later threadable - To Do: Stop rendering of game if in for loop
-            
-            print(f"Reward of episode: {self.episode_reward}")
-            self.epoch_reward += self.episode_reward
-            if self.epoch % 10 == 0:
-                torch.save(self.model, f'model_{time.time_ns()}.model')
-                # Save replay memory at first training step
-                with open(f"replaymemory_{time.time_ns()}.pickle", 'wb') as handle:
-                    pickle.dump(self.replay_memory, handle)
             self.episode_reward = 0
+            self.game = environment.Game(RENDER)  # later threadable
+            if self.epoch % 10 == 0:
+                print(f"Epoc:{self.epoch}")
+                print(f"Replaymemory Size: {len(self.replay_memory)}")
+            
+            
+
             stepcount = 0
             while self.game.reward != -1:
                 stepcount +=1
@@ -172,9 +160,9 @@ class Agent:
                 # game.reward                #
                 ##############################
 
-                # set manual True if you want to manual navigate the snake
-                self.manual = False
-                if self.manual == True:  
+                # set manual True if you want to manual control the snake
+                
+                if MANUAL == True:  
                     # Input 0, 1, 2, 3
                     self.keypressed = input()
                     # Call to step ingame, all variables acessible through self.game
@@ -185,7 +173,7 @@ class Agent:
 
                 else:
                     ####### Training #######
-                    self.current_state = self.getStateAsVec()
+                    self.current_state = sF.getStateAsVec(self.game.game_window, self.game.frame_size_x, device)
                     if np.random.random_sample() > epsilon:
                         
                         # predict q and select action
@@ -208,24 +196,38 @@ class Agent:
                         self.done = True
                     self.episode_reward += self.reward
 
-                    self.new_state = self.getStateAsVec()
+                    self.new_state = sF.getStateAsVec(self.game.game_window, self.game.frame_size_x, device)
                     self.update_replay_memory((self.current_state, self.action, self.reward, self.new_state, self.done))
                     self.train(self.done, 0)
-                    self.current_state = self.new_state
 
+                    
+                    ###### /Training ######    
+
+                # On Game Over:;       
+                if self.game.reward == -1:
+                    # Count steps taken per game
+                    stepcountlist.append(stepcount)
+                    if len(stepcountlist) % 10 == 0:
+                        with open(f"steplist.pickle", 'wb') as handle:
+                            pickle.dump(stepcountlist, handle)
+                        torch.save(self.model, f'models/model_{time.time_ns()}.model')
+                    
+                    # Count rewards earned per game
+                    print(f"Reward of episode: {self.episode_reward}")
+                    list_earned_rewards.append(self.episode_reward)
+                    if len(list_earned_rewards) % 10 == 0:
+                        with open(f"rewardslist.pickle", 'wb') as handle:
+                            pickle.dump(list_earned_rewards, handle)
+
+                    
+                    # Decay epsilon
                     if epsilon > MIN_EPSILON:
                         epsilon *= EPSILON_DECAY
                         epsilon = max(MIN_EPSILON, epsilon)
-                        
-                        if epscount % 100 == 0:
+                                
+                        if epscount % 10 == 0:
                             print("Current Epsilon: " + str(epsilon))
                         epscount+=1
-                    ###### /Training ######           
-                if self.game.reward == -1:
-                    stepcountlist.append(stepcount)
-                    if len(stepcountlist) % 30 == 0:
-                        with open(f"steplist.pickle", 'wb') as handle:
-                            pickle.dump(stepcountlist, handle)
                     self.game.quit()
 
 

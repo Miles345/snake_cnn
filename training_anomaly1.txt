@@ -1,0 +1,2 @@
+X = games played
+Y = steps taken per game 

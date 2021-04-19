@@ -11,7 +11,7 @@ class Game:
         # Hard      ->  40
         # Harder    ->  60
         # Impossible->  120
-        self.difficulty = 10000
+        self.difficulty = 100000
 
         # Window size
         self.frame_size_x = 500
