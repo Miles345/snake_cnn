@@ -7,6 +7,8 @@ from torch.optim import Adam
 from collections import deque
 import random
 import copy
+import pickle
+import time
 # Local imports
 import environment
 import supportFunctions as sF
@@ -19,29 +21,30 @@ torch.autograd.set_detect_anomaly(True)
 REPLAY_MEMORY_SIZE = 50000          # Constants
 DISCOUNT = 0.99
 EPOCHS = 1000
-MIN_REPLAY_MEMORY_SIZE = 5000         # fit after testing < 10000
-MINIBATCH_SIZE = 32                  # maybe 32   
-UPDATE_TARGET_EVERY = 32
+MIN_REPLAY_MEMORY_SIZE = 5000       # fit after testing < 10000
+MINIBATCH_SIZE = 64                  # maybe 32   
+UPDATE_TARGET_EVERY = 10
 EPSILON_DECAY = 0.99975
 MIN_EPSILON = 0.001
-RENDER = False
+RENDER = True
 
 class ConvNet(nn.Module):
     def __init__(self):
         super(ConvNet, self).__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=2),
+            nn.Conv2d(1, 32, kernel_size=4, stride=3, padding=2),
             #nn.BatchNorm2d(32),
-            nn.ReLU())
-            #nn.MaxPool2d(kernel_size=2, stride=2))
-        self.fc = nn.Linear(in_features=93312, out_features=4)
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2))
+        self.drop = nn.Dropout(p=0.2)
+        self.fc = nn.Linear(in_features=2592, out_features=4)
         self.optimizer = Adam(self.parameters(), lr=0.001)
         self.loss = nn.L1Loss()
 
     def forward(self, x):
         x = self.conv(x)
-        #x = torch.flatten(x, start_dim=1, end_dim=-1)
-        x = x.view(x.size(0), -1)
+        x = x.view(x.size(0), -1)   # Flatten
+        x = self.drop(x)
         out = self.fc(x)     # replace in_features with size of oReshape
         return out
 
@@ -50,13 +53,13 @@ class Agent:
         self.model = ConvNet()          # To do: move model parameters to other class
         self.target_model = ConvNet()
         self.model_fit_count = 0
+        # Move models to GPU
         if device != 'cpu':
             self.model = self.model.cuda()
             self.model.loss = self.model.loss.cuda()
             self.target_model = self.target_model.cuda()
             self.target_model.loss = self.target_model.loss.cuda()
-        # init both with same weights
-        #self.target_model.fc.weight = self.model.fc.weight      # target model is what we predict against every step
+        # init both with same weights                                # target model is what we predict against every step
         self.target_model.load_state_dict(self.model.state_dict())   # target model weights will be updated every few steps to keep sanity because of large epsilon
         
         self.replay_memory = deque(maxlen=REPLAY_MEMORY_SIZE)
@@ -69,35 +72,32 @@ class Agent:
     def get_qs(self, state, step):
         return self.model(state)
 
-    def train(self, terminal_state, step):
+    def train(self, terminal_state, step):                  # realy call every step? 
         if len(self.replay_memory) < MIN_REPLAY_MEMORY_SIZE:
             return
 
-        #self.current_qs_list = list()                                           # get predictions for current_state and future_state with same model
-        #self.future_qs_list = list()
-
         # get random sample of replay memory 
         self.minibatch = random.sample(self.replay_memory, MINIBATCH_SIZE)
-
-        # predict current qs of states in minibatch
-        # self.current_states = [transition[0] for transition in self.minibatch]
-        # for state in self.current_states:
-        #     self.current_qs_list.append(self.model(state))
-
-        # predict qs with target model
-        # self.new_current_states = [transition[3] for transition in self.minibatch]
-        # for state in self.new_current_states:
-        #     self.future_qs_list.append(self.target_model(state))
         
         for index, (self.current_states, self.action, self.reward, self.new_current_state, self.done) in enumerate(self.minibatch):
-            self.current_q = torch.max(self.model(self.current_states))
+
+            # Get q of current action with max q
+            current_qs = self.model(self.current_states)
+            chos_action = torch.argmax(current_qs).item()
+            #self.current_q = torch.max(current_qs)
+            # if not game over get q from target model else new_q = reward
+            new_qs = self.target_model(self.new_current_state)
+            new_current_qs = current_qs.detach().clone() # insert self.new_q here  
             if not self.done:
-                self.max_future_q = torch.max(self.target_model(self.new_current_state))
+                self.max_future_q = torch.max(new_qs).item()
                 self.new_q = self.reward + DISCOUNT * self.max_future_q
             else:
-                self.new_q = torch.tensor(self.reward, device=device)
+                self.new_q = self.reward
 
-            self.l = self.model.loss(self.current_q, self.new_q)
+            new_current_qs.data[0,chos_action] = self.new_q
+
+            # Calc loss and backprop
+            self.l = self.model.loss(current_qs, new_current_qs)
             self.l.backward()
 
             if terminal_state:                  # To Do: check if this is the right criteria, probably not
@@ -105,20 +105,15 @@ class Agent:
                 self.model.optimizer.zero_grad()
                 if self.model_fit_count %50 == 0:
                     print("Model fitted " + str(self.model_fit_count) + " times")
-                    print("current_q: " + str(self.current_q))
-                    print("new_q: " + str(self.new_q))
-                    self.model_fit_count += 1
-
-                
+                    print("current_q: " + str(current_qs))
+                    print("new_q: " + str(new_current_qs))
+                    self.model_fit_count += 1   
             else:
                 self.target_update_counter += 1
                 
             if self.target_update_counter > UPDATE_TARGET_EVERY:
                 self.target_model.load_state_dict(self.model.state_dict())
                 self.target_update_counter = 0
-                
-
-        
 
     def getStateAsVec(self):
         # get game window
@@ -154,16 +149,21 @@ class Agent:
         self.max_epoch_reward = 0
         epsilon = 1
         epscount = 0
+        stepcountlist = list()
         for self.epoch in range(EPOCHS):
             self.game = environment.Game(RENDER)  # later threadable - To Do: Stop rendering of game if in for loop
             
             print(f"Reward of episode: {self.episode_reward}")
             self.epoch_reward += self.episode_reward
-            if self.epoch_reward > self.max_epoch_reward:
-                self.max_epoch_reward = self.epoch_reward
-                self.model.save(f'model_{self.epoch}.model')
+            if self.epoch % 10 == 0:
+                torch.save(self.model, f'model_{time.time_ns()}.model')
+                # Save replay memory at first training step
+                with open(f"replaymemory_{time.time_ns()}.pickle", 'wb') as handle:
+                    pickle.dump(self.replay_memory, handle)
             self.episode_reward = 0
+            stepcount = 0
             while self.game.reward != -1:
+                stepcount +=1
                 self.done = False
                 ### interesting Variables ####
                 # game.food_pos              #
@@ -173,8 +173,8 @@ class Agent:
                 ##############################
 
                 # set manual True if you want to manual navigate the snake
-                self.manual = True
-                if self.manual == False:  
+                self.manual = False
+                if self.manual == True:  
                     # Input 0, 1, 2, 3
                     self.keypressed = input()
                     # Call to step ingame, all variables acessible through self.game
@@ -200,8 +200,10 @@ class Agent:
                     else:
                         self.game.step(self.action)
 
+                    # Get reward from environment
                     self.reward = self.game.reward
 
+                    # Check if game over
                     if self.reward == -1:
                         self.done = True
                     self.episode_reward += self.reward
@@ -211,16 +213,19 @@ class Agent:
                     self.train(self.done, 0)
                     self.current_state = self.new_state
 
-                    if epsilon > MIN_EPSILON and self.model_fit_count != 0:
+                    if epsilon > MIN_EPSILON:
                         epsilon *= EPSILON_DECAY
                         epsilon = max(MIN_EPSILON, epsilon)
                         
                         if epscount % 100 == 0:
                             print("Current Epsilon: " + str(epsilon))
                         epscount+=1
-                        
                     ###### /Training ######           
                 if self.game.reward == -1:
+                    stepcountlist.append(stepcount)
+                    if len(stepcountlist) % 30 == 0:
+                        with open(f"steplist.pickle", 'wb') as handle:
+                            pickle.dump(stepcountlist, handle)
                     self.game.quit()
 
 
