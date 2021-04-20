@@ -44,10 +44,8 @@ def getStateAsVec(game_window, frame_size, device):
     return torchVec
 
 def print_stepcount():
-    with open(f"rewardslist.pickle", "rb") as handle:
+    with open(f"steplist.pickle", "rb") as handle:
         steplist = pickle.load(handle)
     
     plt.scatter(range(len(steplist)), steplist, s= 5)
     plt.show()
-
-

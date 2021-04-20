@@ -21,13 +21,13 @@ torch.autograd.set_detect_anomaly(True)
 REPLAY_MEMORY_SIZE = 500000          # Constants
 DISCOUNT = 0.99
 EPOCHS = 10000
-MIN_REPLAY_MEMORY_SIZE = 100000       # fit after testing < 10000
+MIN_REPLAY_MEMORY_SIZE = 200000       # fit after testing < 10000
 MINIBATCH_SIZE = 64                  # maybe 32   
 UPDATE_TARGET_EVERY = 10
 EPSILON_DECAY = 0.99975
 MIN_EPSILON = 0.001
 
-RENDER = True
+RENDER = False
 IMPORT_REPLAY_MEMORY = False
 IMPORTED_EPSILON = 0.5
 
@@ -76,6 +76,7 @@ class Agent:
                 self.replay_memory = pickle.load(handle)
 
         self.target_update_counter = 0
+        self.traincount = 0
 
     def update_replay_memory(self, transition):
         self.replay_memory.append(transition)
@@ -86,11 +87,15 @@ class Agent:
     def train(self, terminal_state, step):                  # realy call every step? 
         if len(self.replay_memory) < MIN_REPLAY_MEMORY_SIZE:
             return
-        if self.first_train_step == True:
+        
+        if self.traincount == 0:
                 # Save replay memory at first training step
                 with open(f"replaymemory.pickle", 'wb') as handle:
                     pickle.dump(self.replay_memory, handle)
                 self.first_train_step = False
+        self.traincount += 1
+        if self.traincount % 100 == 0:
+            torch.save(self.model, f'models/model_{time.time_ns()}.model')
 
         # get random sample of replay memory 
         self.minibatch = random.sample(self.replay_memory, MINIBATCH_SIZE)
@@ -144,7 +149,7 @@ class Agent:
             self.episode_reward = 0
             self.game = environment.Game(RENDER)  # later threadable
             if self.epoch % 10 == 0:
-                print(f"Epoc:{self.epoch}")
+                print(f"Gamecount:{self.epoch}")
                 print(f"Replaymemory Size: {len(self.replay_memory)}")
             
             
@@ -210,7 +215,7 @@ class Agent:
                     if len(stepcountlist) % 10 == 0:
                         with open(f"steplist.pickle", 'wb') as handle:
                             pickle.dump(stepcountlist, handle)
-                        torch.save(self.model, f'models/model_{time.time_ns()}.model')
+                        
                     
                     # Count rewards earned per game
                     print(f"Reward of episode: {self.episode_reward}")

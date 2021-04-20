@@ -44,10 +44,28 @@ class Game:
         # FPS (frames per second) controller
         self.fps_controller = pygame.time.Clock()
 
+        #self.keypressed = random.randint(0,4)
+        direct = ['UP', 'DOWN', 'LEFT', 'RIGHT']
+        self.direction = random.choice(direct)
+        self.change_to = self.direction
+
 
         # Game variables
-        self.snake_pos = [100, 50]
-        self.snake_body = [[100, 50], [100-10, 50], [100-(2*10), 50]]
+        self.snake_pos = [random.randint(3, 47)*10, random.randint(3, 47)*10]
+        #self.snake_body = [[100, 50], [100-10, 50], [100-(2*10), 50]]
+        if self.direction == 'UP':
+            self.keypressed = 0
+            self.snake_body = [self.snake_pos, [self.snake_pos[0], self.snake_pos[1]+10], [self.snake_pos[0], self.snake_pos[1]+20]]
+        if self.direction == 'DOWN':
+            self.keypressed = 1
+            self.snake_body = [self.snake_pos, [self.snake_pos[0], self.snake_pos[1]-10], [self.snake_pos[0], self.snake_pos[1]-20]]
+        if self.direction == 'LEFT':
+            self.keypressed = 2
+            self.snake_body = [self.snake_pos, [self.snake_pos[0]+10, self.snake_pos[1]], [self.snake_pos[0]-20, self.snake_pos[1]]]
+        if self.direction == 'RIGHT':
+            self.keypressed = 3
+            self.snake_body = [self.snake_pos, [self.snake_pos[0]-10, self.snake_pos[1]], [self.snake_pos[0]-20, self.snake_pos[1]]] 
+
         ### moar food ###
         self.foodcount = 30
         self.foodposlist = list()
@@ -55,16 +73,14 @@ class Game:
             self.foodposlist.append([random.randrange(1, (self.frame_size_x//10)) * 10, random.randrange(1, (self.frame_size_y//10)) * 10])
         self.food_spawn = True
 
-        self.keypressed = 'd'
-        self.direction = 'RIGHT'
-        self.change_to = self.direction
+        
 
         self.score = 0
         self.reward = 0
 
     def step(self, keypressed):
         # Main logic
-        self.fps_controller.tick(10000)
+        self.fps_controller.tick(100)
         self.reward = 0
         #for event in pygame.event.get():                                                                 # Here control of snake
 
@@ -109,6 +125,7 @@ class Game:
         if self.change_to == 'RIGHT' and self.direction != 'LEFT':
             self.direction = 'RIGHT'
 
+        self.cont = self.snake_pos.copy()
         # Moving the snake
         if self.direction == 'UP':
             self.snake_pos[1] -= 10
@@ -118,9 +135,12 @@ class Game:
             self.snake_pos[0] -= 10
         if self.direction == 'RIGHT':
             self.snake_pos[0] += 10
-
+        
         # Snake body growing mechanism
-        self.snake_body.insert(0, list(self.snake_pos))
+
+        self.snake_body.insert(0, self.snake_pos)
+        self.snake_body[1] = self.cont
+
         for foodpos in self.foodposlist:
             if self.snake_pos[0] == foodpos[0] and self.snake_pos[1] == foodpos[1]:
                 self.food_spawn = False
@@ -164,5 +184,6 @@ class Game:
         # Refresh game screen
         if self.render == True:
             pygame.display.update()
+
     def quit(self):
         pygame.quit()
