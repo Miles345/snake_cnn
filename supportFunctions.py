@@ -15,7 +15,7 @@ def seed_everything(seed):
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = True
 
-def getStateAsVec(game_window, frame_size, device):
+def getStateAsVec(game_window, frame_size):
     # get game window
     rawImg = pygame.surfarray.array3d(game_window)
 
@@ -39,7 +39,7 @@ def getStateAsVec(game_window, frame_size, device):
         pxscaled.append(pxrow)
         pxrow = [-1]
     pxscaled.append([-1] * (int(frame_size/10)+2))
-    torchVec = torch.tensor(pxscaled, dtype= torch.float).unsqueeze(0).unsqueeze(0).to(device)
+    torchVec = torch.tensor(pxscaled, dtype= torch.float).unsqueeze(0).unsqueeze(0)
     #torchVec = torchVec.to(device)
     return torchVec
 
@@ -49,3 +49,5 @@ def print_stepcount():
     
     plt.scatter(range(len(steplist)), steplist, s= 5)
     plt.show()
+
+print_stepcount()

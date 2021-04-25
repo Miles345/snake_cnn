@@ -80,7 +80,7 @@ class Game:
 
     def step(self, keypressed):
         # Main logic
-        self.fps_controller.tick(100)
+        self.fps_controller.tick(5)
         self.reward = 0
         #for event in pygame.event.get():                                                                 # Here control of snake
 

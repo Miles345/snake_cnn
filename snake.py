@@ -21,15 +21,15 @@ torch.autograd.set_detect_anomaly(True)
 REPLAY_MEMORY_SIZE = 500000          # Constants
 DISCOUNT = 0.99
 EPOCHS = 10000
-MIN_REPLAY_MEMORY_SIZE = 200000       # fit after testing < 10000
-MINIBATCH_SIZE = 64                  # maybe 32   
+MIN_REPLAY_MEMORY_SIZE = 250000       # fit after testing < 10000
+MINIBATCH_SIZE = 32                  # maybe 32   
 UPDATE_TARGET_EVERY = 10
 EPSILON_DECAY = 0.99975
 MIN_EPSILON = 0.001
 
 RENDER = False
 IMPORT_REPLAY_MEMORY = False
-IMPORTED_EPSILON = 0.5
+IMPORTED_EPSILON = 0.6
 
 MANUAL = False
 
@@ -37,21 +37,35 @@ MANUAL = False
 class ConvNet(nn.Module):
     def __init__(self):
         super(ConvNet, self).__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=4, stride=3, padding=2),
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=8, stride=1),
             #nn.BatchNorm2d(32),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2))
-        self.drop = nn.Dropout(p=0.2)
-        self.fc = nn.Linear(in_features=2592, out_features=4)
+            nn.ReLU())
+            #nn.MaxPool2d(kernel_size=2, stride=2))
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(32, 16, kernel_size=5, stride=1),
+            #nn.BatchNorm2d(32),
+            nn.ReLU())
+            #nn.MaxPool2d(kernel_size=2, stride=2))
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(16, 8, kernel_size=3, stride=1),
+            #nn.BatchNorm2d(32),
+            nn.ReLU())
+            #nn.MaxPool2d(kernel_size=2, stride=2))
+        #self.drop = nn.Dropout(p=0.2)
+        self.fc1 = nn.Linear(in_features=12168, out_features=500)
+        self.fc2 = nn.Linear(in_features=self.fc1.out_features, out_features=4)
         self.optimizer = Adam(self.parameters(), lr=0.001)
         self.loss = nn.L1Loss()
 
     def forward(self, x):
-        x = self.conv(x)
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
         x = x.view(x.size(0), -1)   # Flatten
-        x = self.drop(x)
-        out = self.fc(x)     # replace in_features with size of oReshape
+        #x = self.drop(x)
+        x = self.fc1(x)
+        out = self.fc2(x)     # replace in_features with size of oReshape
         return out
 
 class Agent:
@@ -60,6 +74,7 @@ class Agent:
         self.target_model = ConvNet()
         self.model_fit_count = 0
         self.first_train_step = True
+        self.loss_tracker = []
         # Move models to GPU
         if device != 'cpu':
             self.model = self.model.cuda()
@@ -83,6 +98,12 @@ class Agent:
 
     def get_qs(self, state, step):
         return self.model(state)
+    def sample_replay_memory(self):
+        minibatch = random.sample(self.replay_memory, MINIBATCH_SIZE)
+        for (current_states, action, reward, new_current_state, done) in minibatch:
+            current_states = current_states.to(device=device)
+            new_current_state = new_current_state.to(device=device)
+        return minibatch
 
     def train(self, terminal_state, step):                  # realy call every step? 
         if len(self.replay_memory) < MIN_REPLAY_MEMORY_SIZE:
@@ -99,8 +120,11 @@ class Agent:
 
         # get random sample of replay memory 
         self.minibatch = random.sample(self.replay_memory, MINIBATCH_SIZE)
+        #self.minibatch = self.sample_replay_memory()
         
         for index, (self.current_states, self.action, self.reward, self.new_current_state, self.done) in enumerate(self.minibatch):
+            self.current_states = self.current_states.to(device=device)
+            self.new_current_state = self.new_current_state.to(device=device)
 
             # Get q of current action with max q
             current_qs = self.model(self.current_states)
@@ -119,6 +143,7 @@ class Agent:
 
             # Calc loss and backprop
             self.l = self.model.loss(current_qs, new_current_qs)
+            self.loss_tracker.append(self.l.item())
             self.l.backward()
 
             if terminal_state:                  # To Do: check if this is the right criteria, probably not
@@ -135,6 +160,8 @@ class Agent:
             if self.target_update_counter > UPDATE_TARGET_EVERY:
                 self.target_model.load_state_dict(self.model.state_dict())
                 self.target_update_counter = 0
+            self.current_state = self.current_state.cpu()
+            self.new_current_state = self.new_current_state.cpu()
     
     def run_game(self):
 
@@ -178,11 +205,14 @@ class Agent:
 
                 else:
                     ####### Training #######
-                    self.current_state = sF.getStateAsVec(self.game.game_window, self.game.frame_size_x, device)
+                    self.current_state = sF.getStateAsVec(self.game.game_window, self.game.frame_size_x)
                     if np.random.random_sample() > epsilon:
                         
                         # predict q and select action
-                        self.q_values = self.model(self.current_state)
+                        self.current_state = self.current_state.to(device=device)
+                        with torch.no_grad():
+                            self.q_values = self.model(self.current_state)
+                        self.current_state = self.current_state.detach().cpu()
                         self.action = torch.max(self.q_values)
                     else:
                         self.action = np.random.randint(0, 4)
@@ -201,7 +231,7 @@ class Agent:
                         self.done = True
                     self.episode_reward += self.reward
 
-                    self.new_state = sF.getStateAsVec(self.game.game_window, self.game.frame_size_x, device)
+                    self.new_state = sF.getStateAsVec(self.game.game_window, self.game.frame_size_x)
                     self.update_replay_memory((self.current_state, self.action, self.reward, self.new_state, self.done))
                     self.train(self.done, 0)
 
@@ -215,6 +245,8 @@ class Agent:
                     if len(stepcountlist) % 10 == 0:
                         with open(f"steplist.pickle", 'wb') as handle:
                             pickle.dump(stepcountlist, handle)
+                        with open(f"losslist.pickle", 'wb') as handle:
+                            pickle.dump(self.loss_tracker, handle)
                         
                     
                     # Count rewards earned per game
@@ -236,7 +268,7 @@ class Agent:
                     self.game.quit()
 
 
-sF.seed_everything(1) 
+#sF.seed_everything(1) 
 agent = Agent()
 
 agent.run_game()
