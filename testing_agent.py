@@ -42,7 +42,8 @@ class ConvNet(nn.Module):
 RENDER = True
 GAMES = 10
 model = ConvNet()
-model_path = f"models/model_1619379563735850300.model"
+model_path = f"models/model_1619469392217876300.model"
+
 
 with open(model_path, 'rb') as handle:
     model = torch.load(handle)

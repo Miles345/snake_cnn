@@ -80,7 +80,7 @@ class Game:
 
     def step(self, keypressed):
         # Main logic
-        self.fps_controller.tick(5)
+        self.fps_controller.tick(30)
         self.reward = 0
         #for event in pygame.event.get():                                                                 # Here control of snake
 
@@ -161,7 +161,10 @@ class Game:
             # Snake body
             # .draw.rect(play_surface, color, xy-coordinate)
             # xy-coordinate -> .Rect(x, y, size_x, size_y)
-            pygame.draw.rect(self.game_window, self.green, pygame.Rect(pos[0], pos[1], 10, 10))
+            if pos == self.snake_pos:
+                pygame.draw.rect(self.game_window, self.red, pygame.Rect(pos[0], pos[1], 10, 10))
+            else:
+                pygame.draw.rect(self.game_window, self.green, pygame.Rect(pos[0], pos[1], 10, 10))
 
         # Snake food
         for foodpos in self.foodposlist:

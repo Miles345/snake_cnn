@@ -21,7 +21,7 @@ torch.autograd.set_detect_anomaly(True)
 REPLAY_MEMORY_SIZE = 500000          # Constants
 DISCOUNT = 0.99
 EPOCHS = 10000
-MIN_REPLAY_MEMORY_SIZE = 250000       # fit after testing < 10000
+MIN_REPLAY_MEMORY_SIZE = 200000       # fit after testing < 10000
 MINIBATCH_SIZE = 32                  # maybe 32   
 UPDATE_TARGET_EVERY = 10
 EPSILON_DECAY = 0.99975

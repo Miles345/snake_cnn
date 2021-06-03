@@ -29,7 +29,9 @@ def getStateAsVec(game_window, frame_size):
     pxscaled.append([-1] * (int(frame_size/10)+2))
     for i in scaledImg:
         for j in i:
-            if j[1] == 255:
+            if j[0] == 255:
+                pxrow.append(2)
+            elif j[1] == 255:
                 pxrow.append(-1)
             elif j[2] == 255:
                 pxrow.append(1)
@@ -44,10 +46,10 @@ def getStateAsVec(game_window, frame_size):
     return torchVec
 
 def print_stepcount():
-    with open(f"steplist.pickle", "rb") as handle:
+    with open(f"losslist.pickle", "rb") as handle:
         steplist = pickle.load(handle)
     
-    plt.scatter(range(len(steplist)), steplist, s= 5)
+    plt.scatter(range(len(steplist)), steplist, s= 1)
     plt.show()
 
-print_stepcount()
+
